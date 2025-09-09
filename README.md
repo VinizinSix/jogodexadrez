@@ -1,8 +1,6 @@
 # ♟️ Jogo de Xadrez com IA (Java Swing)
 
-![Java](https://img.shields.io/badge/Java-ED8B00?logo=java&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-green)
-![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-blue)
+
 
 Este é um **jogo de xadrez para um jogador contra o computador**, desenvolvido em **Java** usando **Java Swing**.  
 A IA utiliza conceitos de **Minimax** com **poda Alpha-Beta** para tomar decisões estratégicas.
@@ -40,10 +38,3 @@ A IA do jogo foi construída com base em princípios clássicos de IA para jogos
 
 - **Java Development Kit (JDK)** instalado.
 
-### Passos
-
-1. Clone o repositório:
-
-```bash
-git clone https://seu-repositorio-aqui.git
-cd seu-repositorio-aqui
