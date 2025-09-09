@@ -1,4 +1,4 @@
-# ♟️ Jogo de Xadrez com IA (Java Swing)
+# ♟️ Jogo de Xadrez com IA 
 
 
 
