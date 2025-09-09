@@ -1,0 +1,26 @@
+// # compila todo o código
+javac -d bin src/controller/*.java src/model/board/*.java src/model/pieces/*.java src/view/*.java
+
+//# executa a GUI
+java -cp bin view.ChessGUI
+//
+
+
+
+//JPanel mais moderno e interativo, sem perder a funcionalidade. Podemos:
+Adicionar cores de fundo suaves e bordas arredondadas.
+Melhorar os títulos com fonte maior e negrito.
+Colocar botões com efeito visual ou ícones.
+Usar BoxLayout ou GridBagLayout para melhor alinhamento de componentes.
+
+
+//IA Nível 2: Avaliação Básica de Posição
+A mensagem de status na parte inferior da tela mudará para "Vez: Pretas — Adversário pensando...".
+Depois de uma pequena pausa, o movimento da IA aparecerá no tabuleiro.
+A jogada também será registrada no painel de Histórico de Movimentos, no lado direito
+
+
+//IA Nível 5: Ordenação de Movimentos
+Prioridade para Capturas: A IA agora tenta capturar peças do jogador com base no valor da peça a ser capturada.
+Prioridade para Promoção: O algoritmo valoriza a promoção de um peão para dama.
+Controle do Centro: A IA dá preferência a movimentos que levam suas peças para as casas centrais do tabuleiro (d4, e4, d5, e5).
