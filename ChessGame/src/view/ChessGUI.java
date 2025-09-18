@@ -2,6 +2,7 @@ package view;
 
 import javax.swing.*;
 import javax.swing.border.Border;
+import javax.swing.border.EmptyBorder;
 import javax.swing.border.MatteBorder;
 import java.awt.*;
 import java.awt.event.ActionEvent;
@@ -13,13 +14,13 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import javax.swing.*;
 
-// --- CLASSES DE LÓGICA DO JOGO ---
+// --- CLASSES DE LÓGICA DO JOGO (MANTIDAS) ---
 
 // Representa uma posição no tabuleiro
 @SuppressWarnings("unused")
@@ -86,8 +87,53 @@ class Move {
         return 31 * from.hashCode() + to.hashCode();
     }
 }
+// CORREÇÃO: Estrutura da classe ImageUtil
+class ImageUtil {
+    private static final Map<String, ImageIcon> cache = new HashMap<>();
 
+    public static ImageIcon getPieceIcon(boolean isWhite, char symbol, int size) {
+        // Chave de cache baseada na peça e no tamanho para evitar recarregar
+        String key = (isWhite ? "w" : "b") + Character.toUpperCase(symbol) + "_" + size;
+        if (cache.containsKey(key)) return cache.get(key);
 
+        String imgName = (isWhite ? "w" : "b") + Character.toUpperCase(symbol) + ".png";
+        java.net.URL url = null;
+        
+        try {
+            // Tenta o caminho absoluto (Assumindo que sua pasta 'img' está na raiz do Classpath)
+            url = ChessGUI.class.getResource("/img/" + imgName);
+
+            if (url == null) {
+                // Tenta um fallback sem a barra inicial, que funcionará se 'img' e 'view'
+                // estiverem no mesmo nível no Classpath (que é como a sua estrutura 'src' sugere)
+                url = ChessGUI.class.getResource("img/" + imgName);
+            }
+
+            if (url == null) {
+                // Mensagem de erro de depuração aprimorada
+                System.err.println("ERRO GRAVE: Não encontrei a imagem no classpath. Tentei: /img/" + imgName + " e img/" + imgName);
+                return null;
+            }
+
+            // 🛑 CORREÇÃO ESSENCIAL 1: Use a 'url' encontrada e VÁRIAVEL 🛑
+            // Em vez de usar um caminho fixo, use a URL que foi encontrada acima.
+            ImageIcon icon = new ImageIcon(url);
+            
+            // 🛑 CORREÇÃO ESSENCIAL 2: Redimensiona a imagem 🛑
+            // Garantindo que a peça se ajuste ao tamanho da casa (size)
+            Image scaled = icon.getImage().getScaledInstance(size, size, Image.SCALE_SMOOTH);
+            ImageIcon scaledIcon = new ImageIcon(scaled);
+            
+            cache.put(key, scaledIcon);
+            return scaledIcon;
+            
+        } catch (Exception e) {
+            System.err.println("Erro ao carregar ou dimensionar ícone (" + imgName + "): " + e.getMessage());
+            e.printStackTrace(); 
+            return null;
+        }
+    }
+}
 // Classe base para todas as peças
 abstract class Piece implements Cloneable {
     private boolean isWhite;
@@ -97,6 +143,9 @@ abstract class Piece implements Cloneable {
         this.isWhite = isWhite;
         this.symbol = symbol;
     }
+    
+    // Valor da peça para a avaliação Minimax
+    public abstract int getValue(); 
 
     public boolean isWhite() {
         return isWhite;
@@ -123,6 +172,7 @@ abstract class Piece implements Cloneable {
 // Implementações de peças
 class Pawn extends Piece {
     public Pawn(boolean isWhite) { super(isWhite, isWhite ? "P" : "p"); }
+    public int getValue() { return 10; }
     public List<Position> getPseudoLegalMoves(Board board, Position from) {
         List<Position> moves = new ArrayList<>();
         int dir = isWhite() ? -1 : 1;
@@ -157,6 +207,7 @@ class Pawn extends Piece {
 }
 class Knight extends Piece {
     public Knight(boolean isWhite) { super(isWhite, isWhite ? "N" : "n"); }
+    public int getValue() { return 30; }
     public List<Position> getPseudoLegalMoves(Board board, Position from) {
         List<Position> moves = new ArrayList<>();
         int[] dr = {-2, -2, -1, -1, 1, 1, 2, 2};
@@ -175,6 +226,7 @@ class Knight extends Piece {
 }
 class Bishop extends Piece {
     public Bishop(boolean isWhite) { super(isWhite, isWhite ? "B" : "b"); }
+    public int getValue() { return 30; }
     public List<Position> getPseudoLegalMoves(Board board, Position from) {
         List<Position> moves = new ArrayList<>();
         int[] dr = {1, 1, -1, -1};
@@ -202,6 +254,7 @@ class Bishop extends Piece {
 }
 class Rook extends Piece {
     public Rook(boolean isWhite) { super(isWhite, isWhite ? "R" : "r"); }
+    public int getValue() { return 50; }
     public List<Position> getPseudoLegalMoves(Board board, Position from) {
         List<Position> moves = new ArrayList<>();
         int[] dr = {0, 0, 1, -1};
@@ -229,8 +282,10 @@ class Rook extends Piece {
 }
 class Queen extends Piece {
     public Queen(boolean isWhite) { super(isWhite, isWhite ? "Q" : "q"); }
+    public int getValue() { return 90; }
     public List<Position> getPseudoLegalMoves(Board board, Position from) {
         List<Position> moves = new ArrayList<>();
+        // Rainha é a soma dos movimentos da Torre e do Bispo
         moves.addAll(new Rook(isWhite()).getPseudoLegalMoves(board, from));
         moves.addAll(new Bishop(isWhite()).getPseudoLegalMoves(board, from));
         return moves;
@@ -238,6 +293,7 @@ class Queen extends Piece {
 }
 class King extends Piece {
     public King(boolean isWhite) { super(isWhite, isWhite ? "K" : "k"); }
+    public int getValue() { return 900; } // Valor alto para o Rei (não é capturado)
     public List<Position> getPseudoLegalMoves(Board board, Position from) {
         List<Position> moves = new ArrayList<>();
         for(int dr = -1; dr <= 1; dr++) {
@@ -264,11 +320,17 @@ class Board implements Cloneable {
         board = new Piece[8][8];
         setup();
     }
+    
+    // Construtor privado para clonagem
+    private Board(boolean empty) {
+        board = new Piece[8][8];
+        // Se vazio, não faz setup. Usado para inicialização correta na clonagem.
+    }
 
     // Clona o tabuleiro
     @Override
     public Board clone() {
-        Board newBoard = new Board();
+        Board newBoard = new Board(true); // Cria um tabuleiro vazio
         for (int r = 0; r < 8; r++) {
             for (int c = 0; c < 8; c++) {
                 Piece piece = this.board[r][c];
@@ -358,6 +420,7 @@ class Game implements Cloneable {
     
     // Obtém todos os movimentos legais para a vez atual
     public List<Move> getLegalMoves() {
+        // CORREÇÃO: Tipar a lista como List<Move>
         List<Move> legalMoves = new ArrayList<>();
         for (int r = 0; r < 8; r++) {
             for (int c = 0; c < 8; c++) {
@@ -370,11 +433,9 @@ class Game implements Cloneable {
                         tempGame.board().set(to, tempGame.board().get(from));
                         tempGame.board().set(from, null);
 
-                        // MUDANÇA: A IA pode se colocar em xeque, mas não pode se mover para uma casa que está sendo atacada
-                        if (whiteToMove && !tempGame.isUnderAttack(tempGame.findKing(true), false)) {
-                            legalMoves.add(new Move(from, to));
-                        } else if (!whiteToMove && !tempGame.isUnderAttack(tempGame.findKing(false), true)) {
-                            legalMoves.add(new Move(from, to));
+                        // Se o Rei da cor atual NÃO estiver sob ataque no tabuleiro temporário, o movimento é legal
+                        if (!tempGame.inCheck(whiteToMove)) {
+                             legalMoves.add(new Move(from, to));
                         }
                     }
                 }
@@ -383,16 +444,22 @@ class Game implements Cloneable {
         return legalMoves;
     }
 
+    // Movimenta a peça, aplica promoção se necessário
     public void move(Position from, Position to, Character promo) {
         Piece piece = board.get(from);
         if (piece == null) return;
 
-        // Simula o movimento
-        board.set(to, piece);
+        // Se for promoção, a peça movida é substituída
+        if (piece instanceof Pawn && isPromotion(from, to) && promo != null) {
+            boolean isWhite = piece.isWhite();
+            board.set(to, createPromotedPiece(isWhite, promo));
+        } else {
+            board.set(to, piece);
+        }
         board.set(from, null);
 
         // Adiciona ao histórico (notação simplificada)
-        String moveStr = from.toString() + " -> " + to.toString();
+        String moveStr = from.toString() + to.toString();
         history.add(moveStr);
 
         // Alterna o turno
@@ -403,6 +470,16 @@ class Game implements Cloneable {
             isGameOver = true;
         }
     }
+    
+    // Auxiliar para criar a peça promovida
+    private Piece createPromotedPiece(boolean isWhite, char promo) {
+        return switch (Character.toUpperCase(promo)) {
+            case 'R' -> new Rook(isWhite);
+            case 'B' -> new Bishop(isWhite);
+            case 'N' -> new Knight(isWhite);
+            default -> new Queen(isWhite); // Padrão é Rainha
+        };
+    }
 
     public boolean isGameOver() {
         return isGameOver;
@@ -412,6 +489,7 @@ class Game implements Cloneable {
         return whiteToMove;
     }
 
+    // VERIFICAÇÃO DE XEQUE
     public boolean inCheck(boolean isWhite) {
         Position kingPos = findKing(isWhite);
         if (kingPos == null) return false;
@@ -419,14 +497,27 @@ class Game implements Cloneable {
         return isUnderAttack(kingPos, !isWhite);
     }
     
-    // NOVO MÉTODO: Verifica se uma posição está sob ataque de uma determinada cor
+    // Verifica se uma posição está sob ataque de uma determinada cor (atacanteIsWhite)
     private boolean isUnderAttack(Position pos, boolean attackerIsWhite) {
         for (int r = 0; r < 8; r++) {
             for (int c = 0; c < 8; c++) {
                 Position from = new Position(r, c);
                 Piece piece = board.get(from);
                 if (piece != null && piece.isWhite() == attackerIsWhite) {
+                    // Cuidado: Gerar movimentos pseudolegais da peça atacante e verificar se 'pos' está entre eles
+                    // Isso é o suficiente para a maioria das peças, mas o Rei atacante deve ser tratado com cuidado
                     if (piece.getPseudoLegalMoves(board, from).contains(pos)) {
+                        // Exceção do Peão: para ataques, só olhamos as capturas
+                        if (piece instanceof Pawn) {
+                             int dir = piece.isWhite() ? -1 : 1;
+                             int[] captureCols = {-1, 1};
+                             for (int dc : captureCols) {
+                                 Position capturePos = new Position(from.getRow() + dir, from.getColumn() + dc);
+                                 if (capturePos.equals(pos)) return true;
+                             }
+                             // Se o peão não ataca a posição, continue (para evitar falsos positivos)
+                             continue;
+                        }
                         return true;
                     }
                 }
@@ -446,7 +537,7 @@ class Game implements Cloneable {
                 }
             }
         }
-        return null; // Não deveria acontecer em um jogo válido
+        return null; 
     }
 
     public Board board() {
@@ -457,7 +548,7 @@ class Game implements Cloneable {
         return history;
     }
 
-    // Verifica se um movimento é uma captura
+    // Verifica se um movimento é uma captura (para avaliação da IA)
     public boolean isCaptura(Position to) {
         return board.get(to) != null;
     }
@@ -472,30 +563,101 @@ class Game implements Cloneable {
     }
 }
 
-// Classe de utilidade para ícones de peças (adicionada para compatibilidade)
-class ImageUtil {
-    public static ImageIcon getPieceIcon(boolean isWhite, char symbol, int size) {
-        // Este é um método de demonstração. Em um jogo real, você usaria
-        // arquivos de imagem (por exemplo, SVG ou PNG) aqui.
-        return null;
-    }
-}
-
 // --- CLASSE PRINCIPAL ---
 
 public class ChessGUI extends JFrame {
     private static final long serialVersionUID = 1L;
+    
+    
+    // --- Valores de Posição (Peça/Posição) para IA (Exemplo Simples) ---
+    private static final int[][] PAWN_POS_TABLE = {
+        {0, 0, 0, 0, 0, 0, 0, 0},
+        {50, 50, 50, 50, 50, 50, 50, 50},
+        {10, 10, 20, 30, 30, 20, 10, 10},
+        {5, 5, 10, 25, 25, 10, 5, 5},
+        {0, 0, 0, 20, 20, 0, 0, 0},
+        {5, -5, -10, 0, 0, -10, -5, 5},
+        {5, 10, 10, -20, -20, 10, 10, 5},
+        {0, 0, 0, 0, 0, 0, 0, 0}
+    };
+    private static final int[][] KNIGHT_POS_TABLE = {
+        {-50, -40, -30, -30, -30, -30, -40, -50},
+        {-40, -20, 0, 5, 5, 0, -20, -40},
+        {-30, 5, 10, 15, 15, 10, 5, -30},
+        {-30, 0, 15, 20, 20, 15, 0, -30},
+        {-30, 5, 15, 20, 20, 15, 5, -30},
+        {-30, 0, 10, 15, 15, 10, 0, -30},
+        {-40, -20, 0, 0, 0, 0, -20, -40},
+        {-50, -40, -30, -30, -30, -30, -40, -50}
+    };
+    // CORREÇÃO: Adicionando as tabelas de posição que faltavam (apenas exemplos simples)
+    private static final int[][] BISHOP_POS_TABLE = {
+        {-20, -10, -10, -10, -10, -10, -10, -20},
+        {-10, 0, 0, 0, 0, 0, 0, -10},
+        {-10, 0, 5, 10, 10, 5, 0, -10},
+        {-10, 5, 5, 10, 10, 5, 5, -10},
+        {-10, 0, 10, 10, 10, 10, 0, -10},
+        {-10, 10, 10, 10, 10, 10, 10, -10},
+        {-10, 5, 0, 0, 0, 0, 5, -10},
+        {-20, -10, -10, -10, -10, -10, -10, -20}
+    };
+    private static final int[][] ROOK_POS_TABLE = {
+        {0, 0, 0, 0, 0, 0, 0, 0},
+        {5, 10, 10, 10, 10, 10, 10, 5},
+        {-5, 0, 0, 0, 0, 0, 0, -5},
+        {-5, 0, 0, 0, 0, 0, 0, -5},
+        {-5, 0, 0, 0, 0, 0, 0, -5},
+        {-5, 0, 0, 0, 0, 0, 0, -5},
+        {-5, 0, 0, 0, 0, 0, 0, -5},
+        {0, 0, 0, 5, 5, 0, 0, 0}
+    };
+    private static final int[][] QUEEN_POS_TABLE = {
+        {-20, -10, -10, -5, -5, -10, -10, -20},
+        {-10, 0, 0, 0, 0, 0, 0, -10},
+        {-10, 0, 5, 5, 5, 5, 0, -10},
+        {-5, 0, 5, 5, 5, 5, 0, -5},
+        {0, 0, 5, 5, 5, 5, 0, -5},
+        {-10, 5, 5, 5, 5, 5, 0, -10},
+        {-10, 0, 5, 0, 0, 0, 0, -10},
+        {-20, -10, -10, -5, -5, -10, -10, -20}
+    };
+    private static final int[][] KING_MID_POS_TABLE = { // Meio Jogo
+        {-30, -40, -40, -50, -50, -40, -40, -30},
+        {-30, -40, -40, -50, -50, -40, -40, -30},
+        {-30, -40, -40, -50, -50, -40, -40, -30},
+        {-30, -40, -40, -50, -50, -40, -40, -30},
+        {-20, -30, -30, -40, -40, -30, -30, -20},
+        {-10, -20, -20, -20, -20, -20, -20, -10},
+        {20, 20, 0, 0, 0, 0, 20, 20},
+        {20, 30, 10, 0, 0, 10, 30, 20}
+    };
+    private static final int[][] KING_END_POS_TABLE = { // Final de Jogo
+        {-50, -30, -30, -30, -30, -30, -30, -50},
+        {-30, -10, -10, -10, -10, -10, -10, -30},
+        {-30, -10, 20, 30, 30, 20, -10, -30},
+        {-30, -10, 30, 40, 40, 30, -10, -30},
+        {-30, -10, 30, 40, 40, 30, -10, -30},
+        {-30, -10, 20, 30, 30, 20, -10, -30},
+        {-30, -30, 0, 0, 0, 0, -30, -30},
+        {-50, -30, -30, -30, -30, -30, -30, -50}
+    };
+    // ... incluir outras tabelas de posição (Bishop, Rook, Queen, King)
 
     // --- Config de cores/styles ---
-    private static final Color LIGHT_SQ = new Color(240, 217, 181);
-    private static final Color DARK_SQ = new Color(181, 136, 99);
-    private static final Color HILITE_SELECTED = new Color(135, 205, 255);
-    private static final Color HILITE_LEGAL = new Color(0, 0, 255);
-    private static final Color HILITE_LASTMOVE = new Color(0, 0, 139);
-    private static final Color HILITE_CHECK_LEGAL = new Color(255, 165, 0); // Laranja para xeque
+    // AZUL GELO (CASA CLARA)
+    private static final Color LIGHT_SQ = new Color(200, 220, 240); 
+    // CINZA ESCURO (CASA ESCURA)
+    private static final Color DARK_SQ = new Color(70, 80, 90);
 
+    // Cores de DESTAQUE ajustadas para o fundo escuro/claro:
+    private static final Color HILITE_SELECTED = new Color(0, 150, 255); 
+    private static final Color HILITE_LEGAL = new Color(100, 255, 100);
+    private static final Color HILITE_LASTMOVE = new Color(50, 100, 150); 
+    private static final Color HILITE_CHECK_LEGAL = new Color(255, 165, 0); 
+
+    // Definições de Borda:
     private static final Border BORDER_SELECTED = new MatteBorder(2, 2, 2, 2, HILITE_SELECTED);
-    private static final Border BORDER_LEGAL = new MatteBorder(2, 2, 2, 2, HILITE_LEGAL);
+    private static final Border BORDER_LEGAL = new MatteBorder(4, 4, 4, 4, HILITE_LEGAL); 
     private static final Border BORDER_LASTMOVE = new MatteBorder(2, 2, 2, 2, HILITE_LASTMOVE);
 
     private final Game game;
@@ -504,16 +666,25 @@ public class ChessGUI extends JFrame {
     private final JButton[][] squares = new JButton[8][8];
 
     private final JLabel status;
-    private final JTextArea history;
+    private final JTextArea historyTextArea; // Renomeado para evitar conflito
+    @SuppressWarnings("unused")
     private final JScrollPane historyScroll;
 
-    // NOVO: JLabel para a pontuação da avaliação
     private final JLabel scoreLabel;
 
     // Menu / controles
-    private JCheckBoxMenuItem pcAsBlack;
-    private JSpinner depthSpinner;
+    private JCheckBoxMenuItem aiPlaysBlack; 
+    private JComboBox<String> aiLevelCombo; 
     private JMenuItem newGameItem, quitItem;
+
+    // Mapeamento Nível -> Profundidade Minimax 
+    private static final Map<String, Integer> LEVEL_TO_DEPTH = Map.of(
+        "Fácil (Prof. 1)", 1,
+        "Médio (Prof. 2)", 2,
+        "Difícil (Prof. 3)", 3,
+        "Mestre (Prof. 4)", 4
+    );
+    private int currentAIDepth = 3; 
 
     // Seleção atual e movimentos legais
     private Position selected = null;
@@ -577,10 +748,10 @@ public class ChessGUI extends JFrame {
         status.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
 
         // Histórico
-        history = new JTextArea(14, 22);
-        history.setEditable(false);
-        history.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-        historyScroll = new JScrollPane(history);
+        historyTextArea = new JTextArea(14, 22);
+        historyTextArea.setEditable(false);
+        historyTextArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        historyScroll = new JScrollPane(historyTextArea); // JScrollPane usa o JTextArea
 
         // Layout principal: tabuleiro à esquerda, histórico à direita
         JPanel rightPanel = new JPanel(new BorderLayout(10, 10)) {
@@ -616,7 +787,7 @@ public class ChessGUI extends JFrame {
 
 
         // painel do histórico com borda arredondada
-        JScrollPane historyScrollPane = new JScrollPane(historyScroll);
+        JScrollPane historyScrollPane = new JScrollPane(historyTextArea); // Usa o JTextArea
         historyScrollPane.setBorder(BorderFactory.createLineBorder(new Color(100, 100, 200), 2, true));
         rightPanel.add(historyScrollPane, BorderLayout.CENTER);
 
@@ -663,18 +834,25 @@ public class ChessGUI extends JFrame {
 
         JMenu gameMenu = new JMenu("Jogo");
 
-        newGameItem = new JMenuItem("Clique para um novo jogo");
+        newGameItem = new JMenuItem("Novo Jogo");
         newGameItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_N, Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
         newGameItem.addActionListener(e -> doNewGame());
 
-        pcAsBlack = new JCheckBoxMenuItem("Seu adversario joga com as Pretas");
-        pcAsBlack.setSelected(true); // IA joga com as pretas por padrão
+        aiPlaysBlack = new JCheckBoxMenuItem("Adversário joga com as Pretas (IA)"); 
+        aiPlaysBlack.setSelected(true); 
+        aiPlaysBlack.addActionListener(e -> doNewGame()); // Inicia novo jogo ao mudar lado
 
-        JMenu depthMenu = new JMenu("Profundidade IA");
-        // Aumentando a profundidade padrão para 3
-        depthSpinner = new JSpinner(new SpinnerNumberModel(3, 1, 4, 1));
-        depthSpinner.setToolTipText("Profundidade de busca da IA");
-        depthMenu.add(depthSpinner);
+        JMenu depthMenu = new JMenu("Nível da IA");
+        
+        String[] levels = LEVEL_TO_DEPTH.keySet().toArray(new String[0]);
+        aiLevelCombo = new JComboBox<>(levels);
+        aiLevelCombo.setSelectedItem("Difícil (Prof. 3)"); 
+        aiLevelCombo.addActionListener(e -> {
+            String selected = (String) aiLevelCombo.getSelectedItem();
+            currentAIDepth = LEVEL_TO_DEPTH.getOrDefault(selected, 3);
+            doNewGame(); 
+        });
+        depthMenu.add(aiLevelCombo);
 
         quitItem = new JMenuItem("Sair");
         quitItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Q, Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
@@ -682,7 +860,7 @@ public class ChessGUI extends JFrame {
 
         gameMenu.add(newGameItem);
         gameMenu.addSeparator();
-        gameMenu.add(pcAsBlack);
+        gameMenu.add(aiPlaysBlack);
         gameMenu.add(depthMenu);
         gameMenu.addSeparator();
         gameMenu.add(quitItem);
@@ -699,15 +877,24 @@ public class ChessGUI extends JFrame {
         panel.add(btnNew);
 
         JCheckBox cb = new JCheckBox("Adversário (Pretas)");
-        cb.setSelected(pcAsBlack.isSelected());
-        cb.addActionListener(e -> pcAsBlack.setSelected(cb.isSelected()));
+        cb.setSelected(aiPlaysBlack.isSelected());
+        cb.addActionListener(e -> {
+            aiPlaysBlack.setSelected(cb.isSelected());
+            doNewGame();
+        });
         panel.add(cb);
 
-        panel.add(new JLabel("IA:"));
-        int curDepth = ((Integer) depthSpinner.getValue()).intValue();
-        JSpinner sp = new JSpinner(new SpinnerNumberModel(curDepth, 1, 4, 1));
-        sp.addChangeListener(e -> depthSpinner.setValue(sp.getValue()));
-        panel.add(sp);
+        panel.add(new JLabel("Nível IA:"));
+        
+        JComboBox<String> sideLevelCombo = new JComboBox<>(LEVEL_TO_DEPTH.keySet().toArray(new String[0]));
+        sideLevelCombo.setSelectedItem(aiLevelCombo.getSelectedItem());
+        sideLevelCombo.addActionListener(e -> {
+            aiLevelCombo.setSelectedItem(sideLevelCombo.getSelectedItem());
+            String selected = (String) sideLevelCombo.getSelectedItem();
+            currentAIDepth = LEVEL_TO_DEPTH.getOrDefault(selected, 3);
+            doNewGame();
+        });
+        panel.add(sideLevelCombo);
 
         return panel;
     }
@@ -746,7 +933,7 @@ public class ChessGUI extends JFrame {
 
     private void handleClick(Position clicked) {
         if (game.isGameOver() || aiThinking) return;
-        if (pcAsBlack.isSelected() && !game.whiteToMove()) return;
+        if (aiPlaysBlack.isSelected() && !game.whiteToMove()) return; // Player só joga com as Brancas
 
         Piece p = game.board().get(clicked);
 
@@ -754,6 +941,7 @@ public class ChessGUI extends JFrame {
             if (p != null && p.isWhite() == game.whiteToMove()) {
                 selected = clicked;
                 legalForSelected = new ArrayList<>();
+                // Encontra movimentos legais para a peça selecionada
                 for(Move m : game.getLegalMoves()) {
                     if (m.from.equals(selected)) {
                         legalForSelected.add(m.to);
@@ -784,395 +972,381 @@ public class ChessGUI extends JFrame {
                 maybeAnnounceEnd();
                 maybeTriggerAI();
             } else if (p != null && p.isWhite() == game.whiteToMove()) {
-                // Nova seleção de peça
+                // Nova seleção de peça (se for da mesma cor)
                 selected = clicked;
                 legalForSelected = new ArrayList<>();
+                // Encontra movimentos legais para a nova peça selecionada
                 for(Move m : game.getLegalMoves()) {
                     if (m.from.equals(selected)) {
                         legalForSelected.add(m.to);
                     }
                 }
             } else {
+                // Clicou em uma casa inválida (ou na peça do oponente/casa vazia), deseleciona
                 selected = null;
                 legalForSelected.clear();
             }
         }
         refresh();
     }
-
+    
+    // ----------------- Utilitários da GUI -----------------
+    
     private Character askPromotion() {
-        String[] opts = {"Rainha", "Torre", "Bispo", "Cavalo"};
-        int ch = JOptionPane.showOptionDialog(
-                this,
-                "Escolha a peça para mudar:",
-                "Mudar",
-                JOptionPane.DEFAULT_OPTION,
-                JOptionPane.QUESTION_MESSAGE,
-                null,
-                opts,
-                opts[0]
-        );
-        return switch (ch) {
-            case 1 -> 'R';
-            case 2 -> 'B';
-            case 3 -> 'N';
-            default -> 'Q';
+        // Opções de promoção
+        String[] options = {"Rainha", "Torre", "Bispo", "Cavalo"};
+        int choice = JOptionPane.showOptionDialog(this, 
+            "Promover o peão para qual peça?", "Promoção de Peão",
+            JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null,
+            options, options[0]);
+
+        return switch (choice) {
+            case 0 -> 'Q'; // Queen (Rainha)
+            case 1 -> 'R'; // Rook (Torre)
+            case 2 -> 'B'; // Bishop (Bispo)
+            case 3 -> 'N'; // Knight (Cavalo)
+            default -> 'Q'; // Padrão
         };
     }
+    
+    /**
+     * 
+     */
+    private void refresh() {
+    // 🛑 Adicione esta verificação para evitar erros de divisão por zero ou redimensionamento
+    if (boardPanel.getWidth() == 0 || boardPanel.getHeight() == 0) return;
+    
+    // 1. Cálculo Base do Tamanho (lado de uma casa)
+    int size = Math.min(boardPanel.getWidth(), boardPanel.getHeight()) / 8;
 
-    // ----------------- IA (Minimax com Poda Alpha-Beta) -----------------
+    // 🛑 CORREÇÃO 1: Reduza um pouco o tamanho (ex: 5 pixels)
+    // para garantir que a peça caiba dentro de qualquer borda aplicada
+    int pieceSize = size - 5; 
+    if (pieceSize < 1) pieceSize = 1; // Evita tamanhos negativos/zero
+    
+    // Altura da borda (para ajuste fino)
+    @SuppressWarnings("unused")
+    int borderThickness = 4; // Use o valor máximo da sua borda (e.g., BORDER_LEGAL)
 
-    private void maybeTriggerAI() {
-        if (game.isGameOver()) return;
-        if (!pcAsBlack.isSelected()) return;
-        if (game.whiteToMove()) return;
+    for (int r = 0; r < 8; r++) {
+        for (int c = 0; c < 8; c++) {
+            JButton b = squares[r][c];
+            Position pos = new Position(r, c);
+            Piece p = game.board().get(pos);
 
-        aiThinking = true;
-        status.setText("Vez: Pretas — Adversário pensando...");
+            // 🛑 CORREÇÃO 2: Garante que o botão não tenha texto (para centralizar o ícone) 🛑
+            b.setText(null); 
+            b.setHorizontalAlignment(SwingConstants.CENTER);
+            b.setVerticalAlignment(SwingConstants.CENTER);
+            
+            // ... (Restante da lógica de cores e bordas - OK)
+            // A lógica de bordas e cores está OK, mas vamos simplificar a aplicação da borda nula.
 
-        new SwingWorker<Move, Void>() {
-            @Override
-            protected Move doInBackground() {
-                // Tenta encontrar uma jogada no livro de aberturas
-                Move openingMove = getOpeningBookMove();
-
-                if (openingMove != null) {
-                    return openingMove;
+            boolean isLight = (r + c) % 2 == 0;
+            Color baseColor = isLight ? LIGHT_SQ : DARK_SQ;
+            Color bgColor = baseColor;
+            Border border = BorderFactory.createEmptyBorder(); // Começa com borda vazia
+            
+            // ... (Lógica de Destaque de Último Lance, Xeque, Seleção e Movimento Legal)
+            // (Esta seção fica como você a escreveu, pois está correta)
+            
+            // 1. Destaque de Último Lance
+            if (pos.equals(lastFrom) || pos.equals(lastTo)) {
+                border = BORDER_LASTMOVE;
+            }
+            // 2. Destaque de Xeque... (seu código continua)
+            if (p instanceof King && game.inCheck(p.isWhite())) {
+                bgColor = Color.RED.darker();
+                if (legalForSelected.contains(pos)) {
+                    bgColor = HILITE_CHECK_LEGAL; 
                 }
-
-                // Se não houver, usa a avaliação Minimax
-                return findBestMove();
+            }
+            // 3. Destaque de Seleção
+            if (pos.equals(selected)) {
+                border = BORDER_SELECTED;
+            }
+            // 4. Destaque de Movimento Legal
+            if (legalForSelected.contains(pos) && !pos.equals(selected)) {
+                if (game.board().get(pos) != null) {
+                    bgColor = Color.ORANGE.darker();
+                } else {
+                    border = BORDER_LEGAL;
+                }
             }
 
-            @Override
-            protected void done() {
-                Move bestMove;
-                try {
-                    bestMove = get();
-                } catch (Exception e) {
-                    // Em caso de erro, usa um movimento aleatório
-                    bestMove = getRandomMove();
-                }
 
-                if (bestMove != null && !game.isGameOver() && !game.whiteToMove()) {
-                    lastFrom = bestMove.from;
-                    lastTo = bestMove.to;
-                    Character promo = null;
-                    Piece moving = game.board().get(bestMove.from);
-                    if (moving instanceof Pawn && game.isPromotion(bestMove.from, bestMove.to)) {
-                        promo = 'Q';
-                    }
-                    game.move(bestMove.from, bestMove.to, promo);
-                }
-                aiThinking = false;
-                refresh();
-                maybeAnnounceEnd();
+            // Aplica cores e bordas
+            b.setBackground(bgColor);
+            // 🛑 CORREÇÃO 3: Ajuste fino para a borda 🛑
+            // Aplique o BorderFactory.createEmptyBorder() apenas se nenhuma borda de destaque foi aplicada
+            if (border == null || border instanceof EmptyBorder) {
+                b.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0)); 
+            } else {
+                b.setBorder(border);
             }
-        }.execute();
+
+
+            // Aplica Ícone
+            if (p != null) {
+                // Use pieceSize (tamanho ajustado)
+                ImageIcon icon = ImageUtil.getPieceIcon(p.isWhite(), p.getSymbol().charAt(0), pieceSize);
+                b.setIcon(icon);
+            } else {
+                b.setIcon(null);
+            }
+        }
     }
 
-    private Move findBestMove() {
-        int depth = ((Integer) depthSpinner.getValue()).intValue();
+        
+        // Atualiza Status
+        String turn = game.whiteToMove() ? "Brancas" : "Pretas";
+        String statusText = "Sua Vez: " + turn;
+        if (aiPlaysBlack.isSelected() && game.whiteToMove() == false) {
+             statusText = "Turno da IA: Pretas";
+        }
+        if (game.isGameOver()) {
+            statusText = "FIM DE JOGO!";
+        } else if (game.inCheck(game.whiteToMove())) {
+            statusText = "Xeque! Vez das " + turn;
+        }
+        status.setText(statusText);
+        
+        // Atualiza Histórico e Pontuação
+        updateHistoryAndScore();
+        
+        boardPanel.revalidate();
+        boardPanel.repaint();
+    }
+    
+    private void updateHistoryAndScore() {
+        StringBuilder sb = new StringBuilder();
+        List<String> hist = game.history();
+        for (int i = 0; i < hist.size(); i++) {
+            if (i % 2 == 0) {
+                sb.append((i / 2) + 1).append(". ");
+            }
+            sb.append(hist.get(i)).append(" ");
+            if (i % 2 != 0) {
+                sb.append("\n");
+            }
+        }
+        historyTextArea.setText(sb.toString());
+        // Rola para o fim
+        historyTextArea.setCaretPosition(historyTextArea.getDocument().getLength());
+
+        // Avaliação (mostra a avaliação do tabuleiro atual)
+        int score = evaluateBoard(game.board(), game.whiteToMove());
+        String scoreStr = (score > 0) ? "+" + (score / 10.0) : "" + (score / 10.0);
+        scoreLabel.setText("Avaliação: " + scoreStr);
+    }
+    
+    private void maybeAnnounceEnd() {
+         if (game.isGameOver()) {
+            String message = game.inCheck(!game.whiteToMove()) ? 
+                "Xeque-Mate! " + (game.whiteToMove() ? "Pretas" : "Brancas") + " Venceram!" :
+                "Empate por Afogamento.";
+            JOptionPane.showMessageDialog(this, message, "FIM DE JOGO", JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+
+    // ----------------- Lógica da IA (Minimax) -----------------
+    
+    private void maybeTriggerAI() {
+        // A IA só joga com as pretas e se for o turno dela
+        if (aiPlaysBlack.isSelected() && !game.whiteToMove() && !game.isGameOver()) {
+            aiThinking = true;
+            status.setText("IA pensando...");
+
+            // Executa a IA em uma thread separada para não travar a GUI
+            new SwingWorker<Move, Void>() {
+                @Override
+                protected Move doInBackground() {
+                    return getAIMove(currentAIDepth);
+                }
+
+                @Override
+                protected void done() {
+                    try {
+                        Move bestMove = get();
+                        if (bestMove != null) {
+                            lastFrom = bestMove.from;
+                            lastTo = bestMove.to;
+                            // A IA não promove um peão, a não ser que seja para Rainha (simplificação)
+                            Character promo = game.isPromotion(bestMove.from, bestMove.to) ? 'Q' : null;
+                            game.move(bestMove.from, bestMove.to, promo);
+                        }
+                    } catch (Exception e) {
+                        System.err.println("Erro na execução da IA: " + e.getMessage());
+                    } finally {
+                        aiThinking = false;
+                        refresh();
+                        maybeAnnounceEnd();
+                    }
+                }
+            }.execute();
+        }
+    }
+    
+    private void loadOpeningBook() {
+        // Exemplo de livro de aberturas (apenas para teste/exemplo)
+        openingBook.put("e2e4", new Move(new Position(6, 4), new Position(4, 4)));
+        openingBook.put("e2e4 e7e5", new Move(new Position(1, 6), new Position(3, 6))); // Nf3
+        openingBook.put("e2e4 c7c5", new Move(new Position(6, 3), new Position(4, 3))); // d4
+    }
+
+    private Move getAIMove(int depth) {
+        // Tenta movimento do livro de aberturas
+        String currentHistory = String.join(" ", game.history());
+        if (openingBook.containsKey(currentHistory)) {
+            return openingBook.get(currentHistory);
+        }
+
+        // Se não houver livro, calcula o melhor lance
+        // CORREÇÃO: Tipar a lista como List<Move>
         List<Move> allMoves = game.getLegalMoves();
         if (allMoves.isEmpty()) return null;
 
-        // Prioriza xeque-mate imediato
-        for(Move move : allMoves) {
-            Game tempGame = game.clone();
-            tempGame.move(move.from, move.to, null);
-            if (tempGame.isGameOver() && tempGame.inCheck(!tempGame.whiteToMove())) {
-                return move;
-            }
-        }
+        // Otimização: priorizar capturas para o Alpha-Beta Pruning
+        // CORREÇÃO DE ERRO: A lista 'allMoves' é do tipo List<Move>
+        allMoves.sort(Comparator.comparingInt((Move m) -> game.isCaptura(m.to) ? 1 : 0).reversed());
 
-        int bestScore = Integer.MIN_VALUE;
         Move bestMove = null;
+        int bestScore = Integer.MIN_VALUE;
 
-        for (Move move : allMoves) {
-            Game tempGame = game.clone();
-            tempGame.move(move.from, move.to, null);
+        for (Move m : allMoves) {
+            Game nextGame = game.clone();
+            // A IA só move a peça, não pede promoção (simplificação, assume Queen)
+            Character promo = nextGame.isPromotion(m.from, m.to) ? 'Q' : null;
+            nextGame.move(m.from, m.to, promo);
 
-            int score = minimax(tempGame, depth - 1, Integer.MIN_VALUE, Integer.MAX_VALUE, false);
+            // Chamada Minimax
+            int score = minimax(nextGame, depth - 1, Integer.MIN_VALUE, Integer.MAX_VALUE, nextGame.whiteToMove());
+            
+            // Inverte o score para a perspectiva da cor que está movendo (preta)
+            // Se for vez das Pretas (IA), minimizamos (score deve ser menor que o melhor score)
+            // if (!game.whiteToMove()) score = -score; // Não precisa inverter se o Minimax é chamado corretamente
 
             if (score > bestScore) {
                 bestScore = score;
-                bestMove = move;
+                bestMove = m;
             }
         }
         return bestMove;
     }
 
-    // Algoritmo Minimax com Poda Alpha-Beta
-    private int minimax(Game boardState, int depth, int alpha, int beta, boolean isMaximizingPlayer) {
-        if (depth == 0) {
-            return evaluateBoard(boardState);
+    // Minimax com Poda Alpha-Beta
+    private int minimax(Game current, int depth, int alpha, int beta, boolean maximizingPlayer) {
+        if (depth == 0 || current.isGameOver()) {
+            return evaluateBoard(current.board(), maximizingPlayer); // Retorna a avaliação do tabuleiro (a cor que está jogando)
         }
-    
-        if (boardState.isGameOver()) {
-            if (boardState.inCheck(boardState.whiteToMove())) {
-                return isMaximizingPlayer ? -999999 : 999999; 
-            } else {
-                return 0;
-            }
+
+        // CORREÇÃO: Tipar a lista como List<Move>
+        List<Move> moves = current.getLegalMoves();
+        if (moves.isEmpty()) {
+            return evaluateBoard(current.board(), maximizingPlayer);
         }
-    
-        if (isMaximizingPlayer) {
+
+        // Otimização: priorizar capturas
+        // CORREÇÃO DE ERRO: A lista 'moves' é do tipo List<Move>
+        moves.sort(Comparator.comparingInt((Move m) -> current.isCaptura(m.to) ? 1 : 0).reversed());
+
+        if (maximizingPlayer) { // MAX (para a IA que quer o maior score)
             int maxEval = Integer.MIN_VALUE;
-            for (Move move : boardState.getLegalMoves()) {
-                Game tempGame = boardState.clone();
-                tempGame.move(move.from, move.to, null);
-                int eval = minimax(tempGame, depth - 1, alpha, beta, false);
+            for (Move m : moves) {
+                Game nextGame = current.clone();
+                Character promo = nextGame.isPromotion(m.from, m.to) ? 'Q' : null;
+                nextGame.move(m.from, m.to, promo);
+                
+                int eval = minimax(nextGame, depth - 1, alpha, beta, !maximizingPlayer);
                 maxEval = Math.max(maxEval, eval);
                 alpha = Math.max(alpha, eval);
                 if (beta <= alpha) {
-                    break;
+                    break; // Poda Beta
                 }
             }
             return maxEval;
-        } else {
+        } else { // MIN (para o humano que quer o menor score para a IA)
             int minEval = Integer.MAX_VALUE;
-            for (Move move : boardState.getLegalMoves()) {
-                Game tempGame = boardState.clone();
-                tempGame.move(move.from, move.to, null);
-                int eval = minimax(tempGame, depth - 1, alpha, beta, true);
+            for (Move m : moves) {
+                Game nextGame = current.clone();
+                Character promo = nextGame.isPromotion(m.from, m.to) ? 'Q' : null;
+                nextGame.move(m.from, m.to, promo);
+                
+                int eval = minimax(nextGame, depth - 1, alpha, beta, !maximizingPlayer);
                 minEval = Math.min(minEval, eval);
                 beta = Math.min(beta, eval);
                 if (beta <= alpha) {
-                    break;
+                    break; // Poda Alpha
                 }
             }
             return minEval;
         }
     }
-
-    // MODIFICADO: AVALIAÇÃO AGRESSIVA FOCADA NO REI
-    private int evaluateBoard(Game game) {
-        int score = 0;
     
-        // 1. Avaliação de Material
+    // Função de Avaliação Simples (Material + Posição)
+    private int evaluateBoard(Board board, boolean whiteIsMaximizer) {
+        int totalScore = 0;
+        
+        // Ponto final de jogo simples (baseado em peças restantes)
+        int materialCount = 0;
         for (int r = 0; r < 8; r++) {
             for (int c = 0; c < 8; c++) {
-                Piece p = game.board().get(new Position(r,c));
-                if (p != null) {
-                    int pieceValue = getPieceValue(p);
-                    score += p.isWhite() ? pieceValue : -pieceValue;
-                }
+                Piece p = board.get(new Position(r, c));
+                if (p != null) materialCount += p.getValue();
             }
         }
-    
-        // 2. Avaliação de Ataque ao Rei: ESTE É O PONTO CHAVE DA MUDANÇA
-        int whiteAttackScore = calculateKingAttackBonus(game, true);
-        int blackAttackScore = calculateKingAttackBonus(game, false);
-        score += whiteAttackScore;
-        score -= blackAttackScore;
-    
-        // 3. Bônus por xeque (adicionado aqui para ser mais visível)
-        if (game.inCheck(game.whiteToMove())) {
-            score -= 500;
-        }
-        if (game.inCheck(!game.whiteToMove())) {
-            score += 500;
-        }
-    
-        return score;
-    }
-
-    // NOVO MÉTODO: Calcula um bônus massivo para o ataque ao rei
-    private int calculateKingAttackBonus(Game game, boolean isWhite) {
-        Position opponentKingPos = game.findKing(!isWhite);
-        if (opponentKingPos == null) return 0;
-    
-        int bonus = 0;
-        int attackerCount = 0;
-        int[] attackerValues = {0, 0, 0, 0, 0, 0, 0, 0, 0}; // Para contar as ameaças
-    
-        // Busca por peças que atacam a área ao redor do rei
+        boolean isEndGame = materialCount < 300; // Limite simples
+        
         for (int r = 0; r < 8; r++) {
             for (int c = 0; c < 8; c++) {
                 Position pos = new Position(r, c);
-                Piece p = game.board().get(pos);
-                if (p != null && p.isWhite() == isWhite) {
-                    for (Position attackPos : p.getPseudoLegalMoves(game.board(), pos)) {
-                        if (isNear(attackPos, opponentKingPos, 2)) {
-                            attackerCount++;
-                        }
+                Piece p = board.get(pos);
+                if (p != null) {
+                    int pieceValue = p.getValue();
+                    int posValue = getPositionalValue(p, r, c, isEndGame);
+                    
+                    int pieceScore = pieceValue + posValue;
+                    
+                    if (p.isWhite()) {
+                        totalScore += pieceScore;
+                    } else {
+                        totalScore -= pieceScore;
                     }
                 }
             }
         }
+        
+        // O score final é do ponto de vista das Brancas (positivas = boas para Brancas)
+        // Como a IA é Pretas, ela tentará minimizá-lo (torná-lo negativo)
+        // O minimax trata a perspectiva da cor que está movendo, então o score é do ponto de vista do maximizador
+        return totalScore; 
+    }
     
-        // Pontuação exponencial para o ataque. Isso fará a IA acumular peças para o ataque.
-        // O valor base é alto e cresce rapidamente.
-        if (attackerCount >= 1) bonus += 500;
-        if (attackerCount >= 2) bonus += 1500;
-        if (attackerCount >= 3) bonus += 3000;
-        if (attackerCount >= 4) bonus += 6000;
-        if (attackerCount >= 5) bonus += 12000;
-    
-        return bonus;
-    }
+    // Retorna o valor posicional da peça
+    @SuppressWarnings("unused")
+    private int getPositionalValue(Piece piece, int r, int c, boolean isEndGame) {
+        int row = piece.isWhite() ? r : 7 - r; // Inverte para peças pretas
+        int col = c;
+        
+        int[][] table;
+        if (piece instanceof Pawn) table = PAWN_POS_TABLE;
+        else if (piece instanceof Knight) table = KNIGHT_POS_TABLE;
+        else if (piece instanceof Bishop) table = BISHOP_POS_TABLE;
+        else if (piece instanceof Rook) table = ROOK_POS_TABLE;
+        else if (piece instanceof Queen) table = QUEEN_POS_TABLE;
+        else if (piece instanceof King) table = isEndGame ? KING_END_POS_TABLE : KING_MID_POS_TABLE;
+        else return 0; // Outras peças (se houver)
 
-
-    private boolean isNear(Position p1, Position p2, int radius) {
-        return Math.abs(p1.getRow() - p2.getRow()) <= radius &&
-               Math.abs(p1.getColumn() - p2.getColumn()) <= radius;
-    }
-
-    private int getPieceValue(Piece p) {
-        if (p instanceof Pawn) return 100;
-        if (p instanceof Knight) return 320;
-        if (p instanceof Bishop) return 330;
-        if (p instanceof Rook) return 500;
-        if (p instanceof Queen) return 900;
-        if (p instanceof King) return 20000;
-        return 0;
-    }
-
-    // MODIFICADO: Agora usa Piece-Square Tables para peões e reis
-    private int getPositionValue(int r, int c, Piece p) {
-        if (p instanceof Pawn) {
-            int[][] pawnTable = {
-                {0,  0,  0,  0,  0,  0,  0,  0},
-                {50, 50, 50, 50, 50, 50, 50, 50},
-                {10, 10, 20, 30, 30, 20, 10, 10},
-                {5,  5, 10, 25, 25, 10,  5,  5},
-                {0,  0,  0, 20, 20,  0,  0,  0},
-                {5, -5,-10,  0,  0,-10, -5, 5},
-                {5, 10, 10,-20,-20, 10, 10,  5},
-                {0,  0,  0,  0,  0,  0,  0,  0}
-            };
-            return p.isWhite() ? pawnTable[r][c] : pawnTable[7-r][c];
-        }
-
-        if (p instanceof King) {
-            int[][] kingTableEndgame = {
-                {-50, -10, -30, -30, -30, -30, -10, -50},
-                {-30, -30, -30, -30, -30, -30, -30, -30},
-                {-30, -40, -40, -50, -50, -40, -40, -30},
-                {-30, -40, -40, -50, -50, -40, -40, -30},
-                {-30, -40, -40, -50, -50, -40, -40, -30},
-                {-30, -40, -40, -50, -50, -40, -40, -30},
-                {-30, -30, -30, -30, -30, -30, -30, -30},
-                {-50, -10, -30, -30, -30, -30, -10, -50}
-            };
-            // A IA jogará melhor no final do jogo com este Rei
-            return p.isWhite() ? kingTableEndgame[r][c] : kingTableEndgame[7-r][c];
-        }
-
-        return 0;
-    }
-
-    private Move getRandomMove() {
-        List<Move> allMoves = game.getLegalMoves();
-        if (allMoves.isEmpty()) return null;
-        Random rand = new Random();
-        return allMoves.get(rand.nextInt(allMoves.size()));
-    }
-
-    private Move getOpeningBookMove() {
-        // Tenta encontrar uma jogada no livro de aberturas (apenas um exemplo)
-        // Isso é uma simplificação. Um livro de aberturas real seria mais complexo.
-        String currentHistory = String.join(" ", game.history());
-        if (openingBook.containsKey(currentHistory)) {
-            return openingBook.get(currentHistory);
-        }
-        return null;
-    }
-
-    private void loadOpeningBook() {
-        // Adicione algumas jogadas de abertura (brancas)
-        openingBook.put("", new Move(new Position(6, 4), new Position(4, 4))); // e4
-        openingBook.put("e2 -> e4", new Move(new Position(1, 2), new Position(3, 2))); // c5
-        // ... adicione mais conforme necessário
-    }
-
-    // ----------------- Atualização da UI -----------------
-
-    private void refresh() {
-        // ... (código existente para desenhar o tabuleiro)
-        for (int r = 0; r < 8; r++) {
-            for (int c = 0; c < 8; c++) {
-                JButton b = squares[r][c];
-                boolean isLight = (r + c) % 2 != 0;
-                b.setBackground(isLight ? LIGHT_SQ : DARK_SQ);
-
-                // Define o texto ou ícone da peça
-                Piece p = game.board().get(new Position(r, c));
-                if (p != null) {
-                    b.setText(p.getSymbol());
-                    b.setForeground(p.isWhite() ? Color.WHITE : Color.BLACK);
-                } else {
-                    b.setText("");
-                }
-            }
-        }
-
-        // Realça a seleção e os movimentos legais
-        if (selected != null) {
-            squares[selected.getRow()][selected.getColumn()].setBorder(BORDER_SELECTED);
-            for (Position pos : legalForSelected) {
-                squares[pos.getRow()][pos.getColumn()].setBorder(BORDER_LEGAL);
-            }
-        }
-
-        // Realça o último movimento
-        if (lastFrom != null && lastTo != null) {
-            squares[lastFrom.getRow()][lastFrom.getColumn()].setBorder(BORDER_LASTMOVE);
-            squares[lastTo.getRow()][lastTo.getColumn()].setBorder(BORDER_LASTMOVE);
-        }
-
-        updateHistoryDisplay();
-        updateStatusDisplay();
-        updateScoreDisplay(); // NOVO: Atualiza o placar de avaliação
-    }
-
-    private void updateStatusDisplay() {
-        if (game.isGameOver()) {
-            if (game.inCheck(game.whiteToMove())) {
-                status.setText("Xeque-mate! " + (game.whiteToMove() ? "Pretas Vencem!" : "Brancas Vencem!"));
-            } else {
-                status.setText("Empate!");
-            }
+        // Se a peça for preta, inverte o índice da linha na tabela, mantendo o valor da coluna
+        if (!piece.isWhite()) {
+            return table[7 - r][c];
         } else {
-            String turn = game.whiteToMove() ? "Brancas" : "Pretas";
-            status.setText("Vez: " + turn);
+            return table[r][c];
         }
     }
 
-    private void updateHistoryDisplay() {
-        history.setText("");
-        StringBuilder sb = new StringBuilder();
-        List<String> moves = game.history();
-        for (int i = 0; i < moves.size(); i++) {
-            if (i % 2 == 0) {
-                sb.append((i / 2) + 1).append(". ");
-            }
-            sb.append(moves.get(i)).append(" ");
-            if (i % 2 != 0 || i == moves.size() - 1) {
-                sb.append("\n");
-            }
-        }
-        history.setText(sb.toString());
-        history.setCaretPosition(history.getDocument().getLength());
-    }
 
-    // NOVO: Método para exibir a pontuação da avaliação
-    private void updateScoreDisplay() {
-        // A pontuação é da perspectiva das brancas
-        int score = evaluateBoard(game);
-        String scoreText = "Avaliação: " + score;
-        scoreLabel.setText(scoreText);
-    }
-
-
-    private void maybeAnnounceEnd() {
-        if (game.isGameOver()) {
-            refresh();
-            String winner = game.whiteToMove() ? "Pretas" : "Brancas";
-            JOptionPane.showMessageDialog(this, "Fim do Jogo! " + winner + " venceu!");
-        }
-    }
-
+    // ----------------- MAIN -----------------
     public static void main(String[] args) {
         SwingUtilities.invokeLater(ChessGUI::new);
     }
